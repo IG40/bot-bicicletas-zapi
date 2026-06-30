@@ -1,0 +1,14 @@
+flowchart TD
+    A[Cliente envia mensagem no WhatsApp] --> B[Z-API]
+    B --> C[Webhook n8n]
+    C --> D[Filtro de mensagens]
+    D --> E{Mensagem válida?}
+    E -- Não --> F[Encerrar fluxo]
+    E -- Sim --> G[Memória da conversa]
+    G --> H[AI Agent]
+    H --> I[OpenRouter]
+    I --> J[Resposta gerada]
+    J --> K{Transferir para humano?}
+    K -- Sim --> L[Fluxo de atendimento humano]
+    K -- Não --> M[Z-API envia resposta]
+    M --> N[Cliente recebe resposta no WhatsApp]

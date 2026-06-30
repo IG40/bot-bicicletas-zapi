@@ -1,0 +1,373 @@
+{
+  "name": "Atendimento Bicicletas - WhatsApp Z-API + AI",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "atendimento-bicicletas-zapi",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entrada-whatsapp-zapi",
+      "name": "Webhook - Entrada WhatsApp Z-API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mensagem",
+              "name": "mensagem",
+              "value": "={{ $json.body?.text?.message || $json.body?.message?.text || $json.body?.text || $json.message || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "telefone",
+              "name": "telefone",
+              "value": "={{ $json.body?.phone || $json.body?.from || $json.phone || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "nome",
+              "name": "nome",
+              "value": "={{ $json.body?.senderName || $json.body?.chatName || $json.name || 'Cliente' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normalizar-dados",
+      "name": "Normalizar dados recebidos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "mensagem-nao-vazia",
+              "leftValue": "={{ $json.mensagem }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filtro-mensagens",
+      "name": "Filtro de mensagens",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mensagem = $json.mensagem || '';\\nconst nome = $json.nome || 'Cliente';\\n\\nconst regras = `Você é um atendente virtual de um negócio de aluguel, manutenção e venda de bicicletas.\\nPrioridade: aluguel de bicicleta, manutenção e venda.\\nResponda de forma curta, natural e objetiva.\\nUse o histórico e a memória quando disponíveis.\\nNão solicite dados técnicos internos, tokens, QR Code ou API Keys.\\nQuando não conseguir responder, quando o cliente pedir humano, ou quando for reclamação complexa, retorne exatamente: [TRANSFERIR_ATENDIMENTO]\\nNão use Markdown, JSON ou blocos de código.`;\\n\\nreturn [{ json: { ...$json, contexto_agente: regras, entrada_usuario: `${nome}: ${mensagem}` } }];"
+      },
+      "id": "preparar-contexto",
+      "name": "Preparar contexto do atendimento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1/chat/completions' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $env.OPENROUTER_MODEL || 'openai/gpt-4o-mini', messages: [ { role: 'system', content: $json.contexto_agente }, { role: 'user', content: $json.entrada_usuario } ] } }}",
+        "options": {}
+      },
+      "id": "openrouter",
+      "name": "OpenRouter - Gerar resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_NO_N8N",
+          "name": "OpenRouter Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "resposta",
+              "name": "resposta",
+              "value": "={{ $json.choices?.[0]?.message?.content || '[TRANSFERIR_ATENDIMENTO]' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extrair-resposta",
+      "name": "Extrair resposta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "transferencia",
+              "leftValue": "={{ $json.resposta }}",
+              "rightValue": "[TRANSFERIR_ATENDIMENTO]",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "verificar-transferencia",
+      "name": "Verificar transferência",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.ZAPI_BASE_URL || 'https://api.z-api.io') + '/instances/' + $env.ZAPI_INSTANCE_ID + '/token/' + $env.ZAPI_TOKEN + '/send-text' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Client-Token",
+              "value": "={{ $env.ZAPI_CLIENT_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { phone: $json.telefone, message: $json.resposta } }}",
+        "options": {}
+      },
+      "id": "zapi-enviar-resposta",
+      "name": "Z-API - Enviar resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'ok', resposta: $json.resposta } }}",
+        "options": {}
+      },
+      "id": "responder-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        980,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'transferir_atendimento' } }}",
+        "options": {}
+      },
+      "id": "responder-transferencia",
+      "name": "Responder transferência",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        760,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'mensagem_ignorada' } }}",
+        "options": {}
+      },
+      "id": "responder-ignorada",
+      "name": "Responder mensagem ignorada",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -220,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Entrada WhatsApp Z-API": {
+      "main": [
+        [
+          {
+            "node": "Normalizar dados recebidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar dados recebidos": {
+      "main": [
+        [
+          {
+            "node": "Filtro de mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro de mensagens": {
+      "main": [
+        [
+          {
+            "node": "Preparar contexto do atendimento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder mensagem ignorada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar contexto do atendimento": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Gerar resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Gerar resposta": {
+      "main": [
+        [
+          {
+            "node": "Extrair resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair resposta": {
+      "main": [
+        [
+          {
+            "node": "Verificar transferência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar transferência": {
+      "main": [
+        [
+          {
+            "node": "Responder transferência",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Z-API - Enviar resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Z-API - Enviar resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "modelo-github-zapi",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
